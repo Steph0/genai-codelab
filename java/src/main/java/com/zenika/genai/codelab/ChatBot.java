@@ -1,27 +1,35 @@
 package com.zenika.genai.codelab;
 
-import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.data.message.UserMessage;
-import dev.langchain4j.model.StreamingResponseHandler;
-import dev.langchain4j.model.input.PromptTemplate;
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
+import dev.langchain4j.model.chat.StreamingChatLanguageModel;
+import dev.langchain4j.model.ollama.OllamaChatModel;
 import dev.langchain4j.model.ollama.OllamaStreamingChatModel;
-import dev.langchain4j.model.output.Response;
+import dev.langchain4j.rag.content.Content;
+import dev.langchain4j.service.AiServices;
+import dev.langchain4j.service.SystemMessage;
+import dev.langchain4j.service.TokenStream;
+import dev.langchain4j.service.V;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Scanner;
+
+interface Translator {
+    @SystemMessage("Direct translation from English to Japanese, using polite form.")
+    TokenStream englishToJapanese(@V("userInput") String userInput);
+}
 
 public class ChatBot {
 
     private static final String OLLAMA_URL = "http://localhost:11434";
-    private static final String MODEL = "7shi/llama-translate:8b-q4_K_M";
+    private static final String MODEL = "hf.co/Tonic/GemmaX2-28-2B-gguf:latest";
 
     public static void main(String[] args) {
         System.out.println("Init LLM");
-        OllamaStreamingChatModel llm = new OllamaStreamingChatModel.OllamaStreamingChatModelBuilder()
+
+        StreamingChatLanguageModel llm = OllamaStreamingChatModel.builder()
                 .baseUrl(OLLAMA_URL)
                 .modelName(MODEL)
-                .temperature(0.3)
+                .temperature(0.1)
                 .build();
 
         System.out.println("Enter your sentence to translate");
@@ -29,29 +37,13 @@ public class ChatBot {
         Scanner in = new Scanner(System.in);
         String userInput = in.nextLine();
 
-        System.out.println("Prompt");
-        PromptTemplate template = PromptTemplate
-                .from("Translate from English to Japanese this sentence: {{userInput}}");
+        Translator assistant = AiServices.create(Translator.class, llm);
+        TokenStream tokenStream = assistant.englishToJapanese(userInput);
 
-        UserMessage prompt = template.apply(Map.of("userInput", userInput))
-                .toUserMessage();
-
-        llm.generate(List.of(prompt), new StreamingResponseHandler<AiMessage>() {
-            @Override
-            public void onNext(String s) {
-                System.out.print(s);
-            }
-
-            @Override
-            public void onComplete(Response<AiMessage> response) {
-                System.out.println(" =>DONE");
-            }
-
-            @Override
-            public void onError(Throwable throwable) {
-
-            }
-        });
+        tokenStream
+                .onNext(System.out::print)
+                .onError((Throwable error) -> error.printStackTrace())
+                .start();
     }
 
 }
